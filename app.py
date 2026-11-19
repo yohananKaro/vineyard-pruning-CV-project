@@ -37,9 +37,9 @@ def get_tip_and_angle(spur_mask, trunk_centroid):
 
 def process_frame(img_bgr, model):
     h, w = img_bgr.shape[:2]
-      results = model.predict(img_bgr, conf=0.15, iou=0.4, verbose=False)[0]
-      detected = [(model.names[int(c)], float(s)) for c, s in zip(results.boxes.cls, results.boxes.conf)]
-      st.write("Detected:", detected)
+    results = model.predict(img_bgr, conf=0.15, iou=0.4, verbose=False)[0]
+    detected = [(model.names[int(c)], float(s)) for c, s in zip(results.boxes.cls, results.boxes.conf)]
+    st.write("Detected:", detected)
 
     trunk_mask = np.zeros((h, w), dtype=np.uint8)
     spur_list = []
