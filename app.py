@@ -65,6 +65,12 @@ def process_frame(img_bgr, model):
     overlay[trunk_mask > 0] = [0, 200, 0]
     output_img = cv2.addWeighted(output_img, 0.75, overlay, 0.25, 0)
 
+    scale = max(h, w) / 640
+    r = max(6, int(8 * scale))
+    line_len = max(25, int(35 * scale))
+    thickness = max(2, int(2 * scale))
+    font_scale = max(0.5, 0.5 * scale)
+
     pruning_data = []
     for i, spur_mask in enumerate(spur_list):
         ov = output_img.copy()
@@ -73,12 +79,12 @@ def process_frame(img_bgr, model):
         tip, cut_angle = get_tip_and_angle(spur_mask, trunk_centroid)
         if tip is None:
             continue
-        cv2.circle(output_img, tip, 8, (0, 0, 255), -1)
+        cv2.circle(output_img, tip, r, (0, 0, 255), -1)
         rad = np.radians(cut_angle)
-        dx, dy = int(35 * np.cos(rad)), int(35 * np.sin(rad))
-        cv2.line(output_img, (tip[0]-dx, tip[1]-dy), (tip[0]+dx, tip[1]+dy), (255, 0, 0), 2)
-        cv2.putText(output_img, f"{cut_angle:.0f}", (tip[0]+8, tip[1]-8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        dx, dy = int(line_len * np.cos(rad)), int(line_len * np.sin(rad))
+        cv2.line(output_img, (tip[0]-dx, tip[1]-dy), (tip[0]+dx, tip[1]+dy), (255, 0, 0), thickness)
+        cv2.putText(output_img, f"{cut_angle:.0f}", (tip[0]+r, tip[1]-r),
+                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
         pruning_data.append({
             "spur_id": i,
             "x": int(tip[0]),
