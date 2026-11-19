@@ -11,9 +11,11 @@ TRUNK_CLS = 3
 
 st.set_page_config(page_title="Vineyard Pruning Detection", layout="wide")
 
+
 @st.cache_resource
 def load_model():
     return YOLO("best.pt")
+
 
 def get_tip_and_angle(spur_mask, trunk_centroid):
     spur_pixels = np.argwhere(spur_mask > 0).astype(float)
@@ -35,11 +37,10 @@ def get_tip_and_angle(spur_mask, trunk_centroid):
     cut_angle = (axis_angle + 90) % 180
     return tip, cut_angle
 
+
 def process_frame(img_bgr, model):
     h, w = img_bgr.shape[:2]
     results = model.predict(img_bgr, conf=0.15, iou=0.4, verbose=False)[0]
-    detected = [(model.names[int(c)], float(s)) for c, s in zip(results.boxes.cls, results.boxes.conf)]
-    st.write("Detected:", detected)
 
     trunk_mask = np.zeros((h, w), dtype=np.uint8)
     spur_list = []
@@ -59,27 +60,25 @@ def process_frame(img_bgr, model):
     else:
         trunk_centroid = np.array([w / 2, h / 2])
 
-    out = img_bgr.copy()
-    ov = out.copy()
-    ov[trunk_mask > 0] = [0, 180, 0]
-    out = cv2.addWeighted(out, 0.75, ov, 0.25, 0)
+    output_img = img_bgr.copy()
+    overlay = output_img.copy()
+    overlay[trunk_mask > 0] = [0, 200, 0]
+    output_img = cv2.addWeighted(output_img, 0.75, overlay, 0.25, 0)
 
     pruning_data = []
-    for i, sm in enumerate(spur_list):
-        ov2 = out.copy()
-        ov2[sm > 0] = [0, 140, 255]
-        out = cv2.addWeighted(out, 0.78, ov2, 0.22, 0)
-        tip, cut_angle = get_tip_and_angle(sm, trunk_centroid)
+    for i, spur_mask in enumerate(spur_list):
+        ov = output_img.copy()
+        ov[spur_mask > 0] = [0, 140, 255]
+        output_img = cv2.addWeighted(output_img, 0.75, ov, 0.25, 0)
+        tip, cut_angle = get_tip_and_angle(spur_mask, trunk_centroid)
         if tip is None:
             continue
-        cv2.circle(out, tip, 7, (0, 0, 220), -1)
-        cv2.circle(out, tip, 9, (255, 255, 255), 1)
+        cv2.circle(output_img, tip, 8, (0, 0, 255), -1)
         rad = np.radians(cut_angle)
-        dx = int(40 * np.cos(rad))
-        dy = int(40 * np.sin(rad))
-        cv2.line(out, (tip[0]-dx, tip[1]-dy), (tip[0]+dx, tip[1]+dy), (50, 50, 255), 2)
-        cv2.putText(out, f"{cut_angle:.0f}deg", (tip[0]+10, tip[1]-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+        dx, dy = int(35 * np.cos(rad)), int(35 * np.sin(rad))
+        cv2.line(output_img, (tip[0]-dx, tip[1]-dy), (tip[0]+dx, tip[1]+dy), (255, 0, 0), 2)
+        cv2.putText(output_img, f"{cut_angle:.0f}", (tip[0]+8, tip[1]-8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
         pruning_data.append({
             "spur_id": i,
             "x": int(tip[0]),
@@ -87,8 +86,9 @@ def process_frame(img_bgr, model):
             "cut_angle_deg": round(float(cut_angle), 1)
         })
 
-    out_rgb = cv2.cvtColor(out.astype(np.uint8), cv2.COLOR_BGR2RGB)
-    return out_rgb, pruning_data
+    out_rgb = cv2.cvtColor(output_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+    detected_classes = [model.names[int(c)] for c in results.boxes.cls]
+    return out_rgb, pruning_data, detected_classes
 
 
 # --- UI ---
@@ -106,7 +106,9 @@ with tab_img:
         img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
         with st.spinner("Detecting..."):
-            out_rgb, data = process_frame(img_bgr, model)
+            out_rgb, data, detected = process_frame(img_bgr, model)
+
+        st.caption(f"Model classes: {model.names} | Detected: {detected}")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -114,11 +116,13 @@ with tab_img:
         with col2:
             st.image(out_rgb, caption=f"Result — {len(data)} pruning points")
 
-        st.markdown(f"**{len(data)} pruning points detected**")
-        json_str = json.dumps(data, indent=2, default=lambda x: int(x))
-        st.download_button("Download JSON", json_str, "pruning_data.json", "application/json")
-        with st.expander("View JSON"):
-            st.code(json_str, language="json")
+        if data:
+            json_str = json.dumps(data, indent=2, default=lambda x: int(x))
+            st.download_button("Download JSON", json_str, "pruning_data.json", "application/json")
+            with st.expander("View JSON"):
+                st.code(json_str, language="json")
+        else:
+            st.warning("No spurs detected. Check model classes above.")
 
 with tab_vid:
     uploaded_vid = st.file_uploader("Upload video", type=["mp4", "mov", "avi"])
@@ -144,7 +148,7 @@ with tab_vid:
             ret, frame = cap.read()
             if not ret:
                 break
-            out_rgb, data = process_frame(frame, model)
+            out_rgb, data, _ = process_frame(frame, model)
             for d in data:
                 d["frame_id"] = frame_id
             all_data.extend(data)
@@ -160,5 +164,5 @@ with tab_vid:
         st.video(out_path)
         json_str = json.dumps(all_data, indent=2, default=lambda x: int(x))
         st.download_button("Download JSON", json_str, "pruning_data.json", "application/json")
-        st.markdown(f"**{len(all_data)} pruning points detected across {frame_id} frames**")
+        st.markdown(f"**{len(all_data)} pruning points across {frame_id} frames**")
         os.unlink(tfile.name)
