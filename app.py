@@ -66,9 +66,9 @@ def process_frame(img_bgr, model):
     output_img = cv2.addWeighted(output_img, 0.75, overlay, 0.25, 0)
 
     scale = max(h, w) / 640
-    r = max(6, int(8 * scale))
+    r = max(4, int(4 * scale))
     line_len = max(25, int(35 * scale))
-    thickness = max(2, int(2 * scale))
+    thickness = max(2, int(1.5 * scale))
     font_scale = max(0.5, 0.5 * scale)
 
     pruning_data = []
